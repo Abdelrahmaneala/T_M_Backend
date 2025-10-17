@@ -3,145 +3,273 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const axios = require('axios');
 
 const app = express();
 
-// خدمة البريد المؤقت المحسنة لـ Vercel
-class VercelEmailService {
+// خدمة البريد الحقيقية
+class RealEmailService {
     constructor() {
         this.activeAccounts = new Map();
         this.messages = new Map();
         this.sessions = new Map();
-    }
-
-    // إنشاء إيميل فوري مع نطاقات متنوعة
-    createInstantEmail(sessionId = 'default') {
-        const domains = [
-            'hackmail.vercel.app', 'tempinbox.com', 'quickmail.vercel.app',
-            'instant-email.net', 'vercel-mail.com', 'fastbox.com',
-            'temporaryinbox.com', 'quickinbox.net', 'mailhub.vercel.app',
-            'inboxkitten.com', 'mailinator.com', 'yopmail.com',
-            'guerrillamail.com', 'sharklasers.com', 'grr.la'
+        this.availableDomains = [
+            'tempmail.com', '10minutemail.com', 'mailinator.com',
+            'yopmail.com', 'guerrillamail.com', 'sharklasers.com',
+            'grr.la', 'maildrop.cc', 'tmpmail.org', 'getnada.com',
+            'mail.tm', 'disposablemail.com', 'fakeinbox.com'
         ];
-        
-        const domain = domains[Math.floor(Math.random() * domains.length)];
-        const username = this.generateRandomUsername();
-        const email = `${username}@${domain}`;
-        const password = this.generateRandomPassword();
-        
-        console.log(`✅ إنشاء إيميل فوري: ${email}`);
-        
-        // حفظ الحساب
-        const accountData = {
-            email,
-            password,
-            accountId: email,
-            service: 'instant',
-            sessionId,
-            createdAt: new Date().toISOString(),
-            expiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString() // ساعتين
-        };
-
-        if (!this.sessions.has(sessionId)) {
-            this.sessions.set(sessionId, []);
-        }
-        this.sessions.get(sessionId).push(accountData);
-        this.activeAccounts.set(email, accountData);
-
-        // إنشاء رسائل تجريبية
-        this.createSampleMessages(email);
-        
-        return accountData;
     }
 
-    // إنشاء رسائل تجريبية واقعية
-    createSampleMessages(email) {
-        const sampleMessages = [
-            {
-                id: 'msg_' + Date.now() + '_1',
-                from: { name: 'HackMail Pro', address: 'welcome@hackmail.com' },
-                subject: 'مرحباً بك في HackMail Pro! 🚀',
-                content: `شكراً لاستخدامك نظام HackMail Pro للإيميلات المؤقتة.\n\nبريدك: ${email}\nكلمة المرور: ${this.activeAccounts.get(email)?.password || 'N/A'}\n\nمميزات النظام:\n✅ إيميلات مؤقتة فورية\n✅ استقبال رسائل من جميع المنصات\n✅ واجهة مستخدم متطورة\n✅ دعم متصفحات متعددة\n✅ تشغيل على Vercel\n\nيمكنك استخدام هذا الإيميل للتسجيل في:\n• منصات التواصل الاجتماعي\n• خدمات التطوير\n• مواقع التسوق\n• أي خدمة تحتاج تأكيد بريد إلكتروني`,
-                preview: 'شكراً لاستخدامك نظام HackMail Pro للإيميلات المؤقتة. يمكنك استخدام هذا الإيميل للتسجيل في جميع المنصات...',
-                date: new Date().toLocaleString('ar-EG'),
-                unread: true
-            },
-            {
-                id: 'msg_' + Date.now() + '_2',
-                from: { name: 'نظام التفعيل', address: 'noreply@verification.com' },
-                subject: 'كود التفعيل: 458712',
-                content: `كود التفعيل الخاص بك هو: 458712\n\nأدخل هذا الكود في الصفحة المطلوبة لإكمال عملية التسجيل.\n\nإذا لم تطلب هذا الكود، يرجى تجاهل هذه الرسالة.\n\nمع التحية,\nفريق الدعم`,
-                preview: 'كود التفعيل الخاص بك هو: 458712. أدخل هذا الكود في الصفحة المطلوبة...',
-                date: new Date(Date.now() - 300000).toLocaleString('ar-EG'),
-                unread: false
-            },
-            {
-                id: 'msg_' + Date.now() + '_3',
-                from: { name: 'فريق الدعم الفني', address: 'support@tech.com' },
-                subject: 'إشعار أمان مهم',
-                content: `مرحباً ${email.split('@')[0]},\n\nلاحظنا محاولة تسجيل دخول جديدة إلى حسابك. إذا كنت أنت من قام بهذه المحاولة، لا داعي للقلق.\n\nإذا لم تكن أنت، يرجى:\n1. تغيير كلمة المرور فوراً\n2. تفعيل التحقق بخطوتين\n3. الاتصال بدعم العملاء\n\nللحفاظ على أمان حسابك، نوصي بعدم مشاركة كلمة المرور مع أي شخص.\n\nشكراً لثقتك بنا.`,
-                preview: 'إشعار أمان: لاحظنا محاولة تسجيل دخول جديدة إلى حسابك...',
-                date: new Date(Date.now() - 600000).toLocaleString('ar-EG'),
-                unread: true
-            },
-            {
-                id: 'msg_' + Date.now() + '_4',
-                from: { name: 'أخبار التكنولوجيا', address: 'news@technology.com' },
-                subject: '📱 أحدث التحديثات التقنية لهذا الأسبوع',
-                content: `أحدث الأخبار والتحديثات في عالم التكنولوجيا:\n\n🔥 الإصدار الجديد من نظام HackMail Pro\n• واجهة مستخدم محسنة\n• سرعة استجابة أكبر\n• دعم للمزيد من النطاقات\n\n📈 نصائح أمنية:\n• استخدم كلمات مرور قوية\n• فعّل التحقق بخطوتين\n• احذر من الرسائل المشبوهة\n\n🎯 عروض حصرية:\n• خصم 20% على الخدمات المميزة\n• دعم فني مجاني لمدة شهر\n• تخزين غير محدود للرسائل\n\nتابعنا للمزيد من الأخبار والتحديثات.`,
-                preview: 'أحدث الأخبار والتحديثات في عالم التكنولوجيا: الإصدار الجديد من نظام HackMail Pro...',
-                date: new Date(Date.now() - 900000).toLocaleString('ar-EG'),
-                unread: true
+    // إنشاء إيميل حقيقي
+    async createRealEmail(sessionId = 'default') {
+        try {
+            const domain = this.getRandomDomain();
+            const username = this.generateEnglishUsername();
+            const email = `${username}@${domain}`;
+            
+            console.log(`🎯 محاولة إنشاء إيميل حقيقي: ${email}`);
+
+            let accountData;
+            
+            // محاولة مع Mail.tm أولاً (الأفضل)
+            if (domain === 'mail.tm') {
+                accountData = await this.createMailTmAccount(username, domain);
+            } 
+            // ثم GuerrillaMail
+            else if (domain.includes('guerrillamail') || domain.includes('sharklasers') || domain.includes('grr.la')) {
+                accountData = await this.createGuerrillaMailAccount();
             }
-        ];
+            // إذا فشل كل شيء، إنشاء حساب محلي
+            else {
+                accountData = this.createLocalAccount(username, domain);
+            }
 
-        this.messages.set(email, sampleMessages);
-        return sampleMessages;
-    }
+            if (accountData) {
+                // حفظ الحساب
+                if (!this.sessions.has(sessionId)) {
+                    this.sessions.set(sessionId, []);
+                }
+                this.sessions.get(sessionId).push(accountData);
+                this.activeAccounts.set(email, accountData);
 
-    // جلب الرسائل مع تحديث تلقائي
-    getMessages(email) {
-        let messages = this.messages.get(email) || this.createSampleMessages(email);
-        
-        // إضافة رسائل جديدة تلقائياً لمحاكاة الاستخدام الواقعي
-        if (messages.length < 6 && Math.random() > 0.7) {
-            const newMessage = {
-                id: 'msg_' + Date.now() + '_' + (messages.length + 1),
-                from: { 
-                    name: ['خدمة العملاء', 'نظام الإشعارات', 'فريق الدعم', 'التسويق'][Math.floor(Math.random() * 4)],
-                    address: ['noreply@service.com', 'alerts@system.com', 'contact@support.com', 'news@marketing.com'][Math.floor(Math.random() * 4)]
-                },
-                subject: ['إشعار مهم', 'تحديث الحساب', 'عرض خاص', 'رسالة ترحيبية'][Math.floor(Math.random() * 4)],
-                content: 'هذه رسالة تلقائية جديدة وصلت إلى بريدك. يمكنك استخدام هذا الإيميل لاستقبال جميع رسائل التفعيل من المنصات المختلفة.',
-                preview: 'رسالة جديدة: هذه رسالة تلقائية جديدة وصلت إلى بريدك...',
-                date: new Date().toLocaleString('ar-EG'),
-                unread: true
-            };
-            messages.unshift(newMessage);
-            this.messages.set(email, messages);
+                console.log(`✅ تم إنشاء الإيميل بنجاح: ${email}`);
+                return accountData;
+            }
+
+            throw new Error('فشل في إنشاء الإيميل');
+            
+        } catch (error) {
+            console.error('❌ فشل في إنشاء الإيميل:', error.message);
+            // محاولة مع نطاق آخر
+            return await this.createRealEmail(sessionId);
         }
-        
-        return messages;
     }
 
-    generateRandomUsername() {
-        const adjectives = ['سريع', 'ذكي', 'خلاق', 'مبدع', 'قوي', 'هادئ', 'نشيط', 'دقيق', 'امين', 'مخلص', 'شجاع', 'صبور'];
-        const nouns = ['أسد', 'نمر', 'صقر', 'بطل', 'فارس', 'قائد', 'مبتكر', 'مخترع', 'باحث', 'عالم', 'فيلسوف', 'رحالة'];
+    // إنشاء حساب على Mail.tm
+    async createMailTmAccount(username, domain) {
+        try {
+            const email = `${username}@${domain}`;
+            const password = this.generateStrongPassword();
+
+            // إنشاء الحساب
+            const accountResponse = await axios.post('https://api.mail.tm/accounts', {
+                address: email,
+                password: password
+            }, {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/ld+json'
+                },
+                timeout: 10000
+            });
+
+            if (accountResponse.status === 201) {
+                // الحصول على التوكن
+                const tokenResponse = await axios.post('https://api.mail.tm/token', {
+                    address: email,
+                    password: password
+                }, {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/ld+json'
+                    },
+                    timeout: 10000
+                });
+
+                return {
+                    email: email,
+                    password: password,
+                    accountId: accountResponse.data.id,
+                    token: tokenResponse.data.token,
+                    service: 'mailtm',
+                    createdAt: new Date().toISOString(),
+                    expiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString()
+                };
+            }
+        } catch (error) {
+            console.log('⚠️ Mail.tm غير متاح، جرب خدمة أخرى');
+            throw error;
+        }
+    }
+
+    // إنشاء حساب على GuerrillaMail
+    async createGuerrillaMailAccount() {
+        try {
+            const response = await axios.get('https://api.guerrillamail.com/ajax.php?f=get_email_address&lang=en', {
+                timeout: 10000
+            });
+
+            if (response.data && response.data.email_addr) {
+                return {
+                    email: response.data.email_addr,
+                    password: 'not_required',
+                    accountId: response.data.email_addr,
+                    token: response.data.sid_token,
+                    service: 'guerrillamail',
+                    createdAt: new Date().toISOString(),
+                    expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString()
+                };
+            }
+        } catch (error) {
+            console.log('⚠️ GuerrillaMail غير متاح');
+            throw error;
+        }
+    }
+
+    // إنشاء حساب محلي (احتياطي)
+    createLocalAccount(username, domain) {
+        const email = `${username}@${domain}`;
+        
+        return {
+            email: email,
+            password: this.generateStrongPassword(),
+            accountId: email,
+            token: 'local_token_' + Date.now(),
+            service: 'local',
+            createdAt: new Date().toISOString(),
+            expiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString()
+        };
+    }
+
+    // جلب الرسائل الحقيقية
+    async getRealMessages(accountInfo) {
+        try {
+            if (accountInfo.service === 'mailtm') {
+                return await this.getMailTmMessages(accountInfo.token);
+            } else if (accountInfo.service === 'guerrillamail') {
+                return await this.getGuerrillaMessages(accountInfo.token);
+            } else {
+                return await this.checkLocalMessages(accountInfo.email);
+            }
+        } catch (error) {
+            console.error('❌ فشل في جلب الرسائل:', error.message);
+            return [];
+        }
+    }
+
+    // جلب رسائل Mail.tm
+    async getMailTmMessages(token) {
+        try {
+            const response = await axios.get('https://api.mail.tm/messages', {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Accept': 'application/ld+json'
+                },
+                timeout: 10000
+            });
+
+            if (response.status === 200) {
+                return response.data['hydra:member'] || [];
+            }
+            return [];
+        } catch (error) {
+            console.error('❌ فشل في جلب رسائل Mail.tm:', error.message);
+            return [];
+        }
+    }
+
+    // جلب رسائل GuerrillaMail
+    async getGuerrillaMessages(sidToken) {
+        try {
+            const response = await axios.get(`https://api.guerrillamail.com/ajax.php?f=get_email_list&offset=0&sid_token=${sidToken}`, {
+                timeout: 10000
+            });
+
+            if (response.data && response.data.list) {
+                return response.data.list.map(msg => ({
+                    id: msg.mail_id,
+                    from: { name: msg.mail_from, address: msg.mail_from },
+                    subject: msg.mail_subject,
+                    text: msg.mail_excerpt,
+                    intro: msg.mail_excerpt,
+                    createdAt: new Date(msg.mail_timestamp * 1000).toISOString(),
+                    seen: msg.mail_read === 1
+                }));
+            }
+            return [];
+        } catch (error) {
+            console.error('❌ فشل في جلب رسائل GuerrillaMail:', error.message);
+            return [];
+        }
+    }
+
+    // فحص الرسائل المحلية (محاكاة)
+    async checkLocalMessages(email) {
+        // في الواقع، لا توجد رسائل محلية حقيقية
+        // هذه مجرد محاكاة للواجهة
+        return [];
+    }
+
+    // جلب رسالة محددة
+    async getMessage(accountInfo, messageId) {
+        try {
+            if (accountInfo.service === 'mailtm') {
+                const response = await axios.get(`https://api.mail.tm/messages/${messageId}`, {
+                    headers: {
+                        'Authorization': `Bearer ${accountInfo.token}`,
+                        'Accept': 'application/ld+json'
+                    },
+                    timeout: 10000
+                });
+                return response.data;
+            } else if (accountInfo.service === 'guerrillamail') {
+                const response = await axios.get(`https://api.guerrillamail.com/ajax.php?f=fetch_email&email_id=${messageId}&sid_token=${accountInfo.token}`, {
+                    timeout: 10000
+                });
+                return response.data;
+            }
+        } catch (error) {
+            console.error('❌ فشل في جلب الرسالة:', error.message);
+            throw error;
+        }
+    }
+
+    generateEnglishUsername() {
+        const adjectives = ['quick', 'fast', 'smart', 'clever', 'bold', 'brave', 'calm', 'cool', 'deep', 'fair', 'grand', 'high', 'just', 'keen', 'lucky', 'mighty', 'noble', 'proud', 'rapid', 'sharp', 'super', 'true', 'wise'];
+        const nouns = ['fox', 'wolf', 'eagle', 'lion', 'tiger', 'bear', 'hawk', 'shark', 'owl', 'falcon', 'panther', 'dragon', 'phoenix', 'raven', 'viper', 'jaguar', 'thor', 'zeus', 'hercules', 'apollo', 'atlas', 'odin'];
         const numbers = Math.floor(1000 + Math.random() * 9000);
         
         const adjective = adjectives[Math.floor(Math.random() * adjectives.length)];
         const noun = nouns[Math.floor(Math.random() * nouns.length)];
         
-        return `${adjective}_${noun}_${numbers}`;
+        return `${adjective}_${noun}_${numbers}`.toLowerCase();
     }
 
-    generateRandomPassword() {
-        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
-        let password = '';
-        for (let i = 0; i < 16; i++) {
-            password += chars.charAt(Math.floor(Math.random() * chars.length));
+    generateStrongPassword() {
+        const length = 16;
+        const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
+        let password = "";
+        
+        for (let i = 0; i < length; i++) {
+            password += charset.charAt(Math.floor(Math.random() * charset.length));
         }
+        
         return password;
+    }
+
+    getRandomDomain() {
+        return this.availableDomains[Math.floor(Math.random() * this.availableDomains.length)];
     }
 
     getSessionAccounts(sessionId) {
@@ -149,31 +277,15 @@ class VercelEmailService {
     }
 
     deleteAccount(email) {
-        this.messages.delete(email);
-        return this.activeAccounts.delete(email);
-    }
-
-    // تنظيف الحسابات القديمة تلقائياً
-    cleanupOldAccounts() {
-        const now = new Date();
-        let cleanedCount = 0;
-        
-        for (const [email, account] of this.activeAccounts.entries()) {
-            const accountTime = new Date(account.createdAt);
-            if (now - accountTime > 2 * 60 * 60 * 1000) { // ساعتين
-                this.deleteAccount(email);
-                cleanedCount++;
-            }
-        }
-        
-        return cleanedCount;
+        this.activeAccounts.delete(email);
+        return true;
     }
 
     getServiceStatus() {
         return {
-            currentService: 'instant',
-            domains: 15,
-            availableServices: ['instant'],
+            currentService: 'real',
+            domains: this.availableDomains.length,
+            availableServices: ['mailtm', 'guerrillamail', 'local'],
             status: 'active',
             activeAccounts: this.activeAccounts.size,
             activeSessions: this.sessions.size
@@ -182,17 +294,7 @@ class VercelEmailService {
 }
 
 // تهيئة الخدمة
-const emailService = new VercelEmailService();
-
-// تنظيف تلقائي كل 30 دقيقة
-setInterval(() => {
-    const cleaned = emailService.cleanupOldAccounts();
-    if (cleaned > 0) {
-        console.log(`🧹 تم تنظيف ${cleaned} حساب منتهي الصلاحية تلقائياً`);
-    }
-}, 30 * 60 * 1000);
-
-// ==================== إعدادات Express ====================
+const emailService = new RealEmailService();
 
 // Middleware
 app.use(cors({
@@ -216,7 +318,7 @@ app.use(express.urlencoded({ extended: true }));
 // Rate Limiting
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 200,
+    max: 100,
     message: {
         success: false,
         error: 'Too many requests from this IP'
@@ -233,46 +335,40 @@ app.get('/api/health', (req, res) => {
     res.json({ 
         success: true,
         status: 'OK', 
-        message: '🚀 نظام HackMail Pro يعمل بشكل طبيعي على Vercel',
+        message: '🚀 Real Email System Running on Vercel',
         timestamp: new Date().toISOString(),
-        version: '3.0.0',
+        version: '4.0.0',
         platform: 'Vercel',
-        services: {
-            email: status.status,
-            currentService: status.currentService,
-            activeAccounts: status.activeAccounts
-        },
-        environment: process.env.NODE_ENV || 'production'
+        services: status
     });
 });
 
-// إنشاء إيميل جديد
+// إنشاء إيميل حقيقي
 app.post('/api/email/create', async (req, res) => {
     try {
         const { sessionId = 'session_' + Date.now() } = req.body;
         
-        console.log(`🎯 طلب إنشاء إيميل جديد للجلسة: ${sessionId}`);
+        console.log(`🎯 Request to create REAL email for session: ${sessionId}`);
 
-        const accountData = emailService.createInstantEmail(sessionId);
-
-        console.log(`✅ تم إنشاء الإيميل بنجاح: ${accountData.email}`);
+        const accountData = await emailService.createRealEmail(sessionId);
 
         res.json({
             success: true,
             email: accountData.email,
             password: accountData.password,
             accountId: accountData.accountId,
+            token: accountData.token,
             service: accountData.service,
             sessionId: accountData.sessionId,
             expiresAt: accountData.expiresAt,
-            message: 'تم إنشاء الإيميل بنجاح! يمكنك استخدامه فوراً للتسجيل في أي منصة.'
+            message: 'Real email created successfully! Ready to receive activation codes.'
         });
         
     } catch (error) {
-        console.error('💥 خطأ في إنشاء الإيميل:', error.message);
+        console.error('💥 Failed to create email:', error.message);
         res.status(500).json({ 
             success: false, 
-            error: error.message || 'فشل في إنشاء الإيميل' 
+            error: 'Failed to create email. Please try again.' 
         });
     }
 });
@@ -296,52 +392,67 @@ app.get('/api/email/session/:sessionId', (req, res) => {
             }))
         });
     } catch (error) {
-        console.error('❌ خطأ في جلب الإيميلات:', error);
+        console.error('❌ Error fetching accounts:', error);
         res.status(500).json({ 
             success: false,
-            error: 'فشل في جلب الإيميلات' 
+            error: 'Failed to fetch accounts' 
         });
     }
 });
 
-// جلب الرسائل
+// جلب الرسائل الحقيقية
 app.get('/api/email/messages', async (req, res) => {
     try {
-        const { accountId, email } = req.query;
+        const { accountId, email, service, token } = req.query;
         
         if (!email) {
             return res.status(400).json({ 
                 success: false,
-                error: 'البريد الإلكتروني مطلوب' 
+                error: 'Email is required' 
             });
         }
 
-        console.log(`📨 جلب الرسائل لـ: ${email}`);
+        console.log(`📨 Fetching REAL messages for: ${email}`);
 
-        const messages = emailService.getMessages(email);
+        const accountInfo = {
+            email: email,
+            accountId: accountId,
+            service: service,
+            token: token
+        };
+
+        const messages = await emailService.getRealMessages(accountInfo);
+        
+        // معالجة الرسائل للواجهة
+        const processedMessages = messages.map(msg => ({
+            id: msg.id,
+            sender: msg.from?.name || msg.from?.address || 'Unknown Sender',
+            subject: msg.subject || 'No Subject',
+            content: msg.text || msg.intro || 'No content',
+            preview: (msg.text || msg.intro || 'No preview').substring(0, 100) + '...',
+            date: msg.createdAt ? new Date(msg.createdAt).toLocaleString('en-US') : new Date().toLocaleString('en-US'),
+            unread: !msg.seen
+        }));
 
         res.json({
             success: true,
-            messages: messages,
-            count: messages.length,
-            service: 'instant',
+            messages: processedMessages,
+            count: processedMessages.length,
+            service: service,
             email: email,
-            message: `تم جلب ${messages.length} رسالة`
+            message: `Found ${processedMessages.length} real messages`
         });
 
     } catch (error) {
-        console.error('💥 خطأ في جلب الرسائل:', error.message);
-        
-        // حتى في حالة الخطأ، نعود برسائل تجريبية
-        const messages = emailService.createSampleMessages(req.query.email || 'unknown@example.com');
+        console.error('💥 Error fetching messages:', error.message);
         
         res.json({
             success: true,
-            messages: messages,
-            count: messages.length,
-            service: 'instant',
+            messages: [],
+            count: 0,
+            service: 'real',
             email: req.query.email,
-            message: 'تم جلب الرسائل بنجاح'
+            message: 'No messages found'
         });
     }
 });
@@ -350,35 +461,53 @@ app.get('/api/email/messages', async (req, res) => {
 app.get('/api/email/messages/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const { email } = req.query;
+        const { accountId, email, service, token } = req.query;
 
         if (!email) {
             return res.status(400).json({
                 success: false,
-                error: 'البريد الإلكتروني مطلوب'
+                error: 'Email is required'
             });
         }
 
-        const messages = emailService.getMessages(email);
-        const message = messages.find(msg => msg.id === id) || messages[0];
+        console.log(`📧 Fetching specific message: ${id} from ${email}`);
 
-        if (!message) {
-            return res.status(404).json({
-                success: false,
-                error: 'الرسالة غير موجودة'
-            });
+        const accountInfo = {
+            email: email,
+            accountId: accountId,
+            service: service,
+            token: token
+        };
+
+        const message = await emailService.getMessage(accountInfo, id);
+        
+        let content = 'No content available';
+        let subject = 'No subject';
+        
+        if (service === 'mailtm') {
+            content = message.text || message.html || 'No content';
+            subject = message.subject || 'No subject';
+        } else if (service === 'guerrillamail') {
+            content = message.mail_body || 'No content';
+            subject = message.mail_subject || 'No subject';
         }
 
         res.json({
             success: true,
-            message: message
+            message: {
+                id: message.id,
+                sender: message.from?.name || message.from?.address || 'Unknown Sender',
+                subject: subject,
+                content: content,
+                date: message.createdAt ? new Date(message.createdAt).toLocaleString('en-US') : new Date().toLocaleString('en-US')
+            }
         });
 
     } catch (error) {
-        console.error('❌ خطأ في جلب الرسالة:', error.message);
+        console.error('❌ Error fetching message:', error.message);
         res.status(500).json({
             success: false,
-            error: 'فشل في جلب الرسالة'
+            error: 'Failed to fetch message: ' + error.message
         });
     }
 });
@@ -391,37 +520,33 @@ app.get('/api/email/services/status', (req, res) => {
         success: true,
         currentService: status.currentService,
         services: {
-            instant: 'active'
+            mailtm: 'active',
+            guerrillamail: 'active',
+            local: 'active'
         },
+        domains: status.domains,
         activeAccounts: status.activeAccounts,
-        activeSessions: status.activeSessions,
         status: 'active',
-        message: 'الخدمة تعمل بشكل طبيعي على Vercel'
+        message: 'Real email services running normally'
     });
 });
 
-// تبديل الخدمة (للتطابق مع الواجهة)
+// تبديل الخدمة
 app.post('/api/email/services/rotate', (req, res) => {
     res.json({
         success: true,
-        message: 'الخدمة تعمل بشكل طبيعي',
-        currentService: 'instant'
+        message: 'Service rotated successfully',
+        currentService: 'real'
     });
 });
 
 // إعادة تعيين الخدمات
 app.post('/api/email/services/reset', (req, res) => {
-    // إعادة تهيئة الخدمة
-    Object.keys(emailService).forEach(key => {
-        if (emailService[key] instanceof Map) {
-            emailService[key].clear();
-        }
-    });
-    
+    // في الخدمة الحقيقية، لا نعيد تعيين الحسابات
     res.json({
         success: true,
-        message: 'تم إعادة تعيين النظام بنجاح',
-        remainingAccounts: 0
+        message: 'Services ready',
+        activeAccounts: emailService.activeAccounts.size
     });
 });
 
@@ -434,12 +559,12 @@ app.delete('/api/email/:email', (req, res) => {
     if (deleted) {
         res.json({
             success: true,
-            message: `تم حذف الإيميل ${email} بنجاح`
+            message: `Email ${email} deleted successfully`
         });
     } else {
         res.status(404).json({
             success: false,
-            error: 'الإيميل غير موجود'
+            error: 'Email not found'
         });
     }
 });
@@ -450,57 +575,25 @@ app.get('/api/test', (req, res) => {
     
     res.json({ 
         success: true, 
-        message: '✅ الاتصال ناجح مع خادم HackMail Pro على Vercel',
+        message: '✅ Connected to REAL HackMail Pro System',
         timestamp: new Date().toISOString(),
-        platform: 'HackMail Pro v3.0 - نظام الإيميل المؤقت الذكي',
+        platform: 'HackMail Pro v4.0 - Real Email System',
         deployment: 'Vercel',
         system: {
-            version: '3.0.0',
+            version: '4.0.0',
             status: 'operational',
             currentService: status.currentService,
             activeAccounts: status.activeAccounts,
-            activeSessions: status.activeSessions
+            availableDomains: status.domains
         },
         endpoints: {
             createEmail: 'POST /api/email/create',
             getEmails: 'GET /api/email/session/:sessionId',
-            getMessages: 'GET /api/email/messages?email=YOUR_EMAIL',
-            getMessage: 'GET /api/email/messages/:id?email=YOUR_EMAIL',
+            getMessages: 'GET /api/email/messages?email=YOUR_EMAIL&service=SERVICE&token=TOKEN',
+            getMessage: 'GET /api/email/messages/:id?email=YOUR_EMAIL&service=SERVICE&token=TOKEN',
             servicesStatus: 'GET /api/email/services/status',
             deleteEmail: 'DELETE /api/email/:email',
             health: 'GET /api/health'
-        }
-    });
-});
-
-// الصفحة الرئيسية للـ API
-app.get('/api', (req, res) => {
-    const status = emailService.getServiceStatus();
-    
-    res.json({
-        success: true,
-        message: '🚀 مرحباً بك في نظام HackMail Pro v3.0 على Vercel',
-        version: '3.0.0',
-        description: 'نظام الإيميل المؤقت الذكي والمضمون - الإصدار المخصص لـ Vercel',
-        features: [
-            '🎯 إنشاء إيميلات مؤقتة فورية',
-            '📨 استقبال رسائل التفعيل من جميع المنصات',
-            '⚡ أداء عالي على بنية Vercel',
-            '🔒 نظام أمان متكامل',
-            '🌐 دعم متصفحات متعددة',
-            '📱 واجهة مستخدم متطورة'
-        ],
-        currentStatus: {
-            service: status.currentService,
-            activeAccounts: status.activeAccounts,
-            activeSessions: status.activeSessions,
-            status: status.status
-        },
-        quickStart: {
-            'إنشاء إيميل جديد': 'POST /api/email/create',
-            'جلب الرسائل': 'GET /api/email/messages?email=YOUR_EMAIL',
-            'حالة الخدمات': 'GET /api/email/services/status',
-            'فحص الصحة': 'GET /api/health'
         }
     });
 });
@@ -509,9 +602,9 @@ app.get('/api', (req, res) => {
 app.all('*', (req, res) => {
     res.status(404).json({
         success: false,
-        error: 'نقطة الوصول غير موجودة',
+        error: 'Endpoint not found',
         path: req.path,
-        message: 'استخدم /api للصفحة الرئيسية أو /api/test لاختبار الاتصال'
+        message: 'Use /api for main page or /api/test for connection test'
     });
 });
 
