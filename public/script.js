@@ -1,6 +1,7 @@
+// file name: public/script.js
 class HackMailPro {
     constructor() {
-        this.baseURL = window.location.origin;
+        this.baseURL = window.BASE_URL || window.location.origin;
         this.sessionId = this.generateSessionId();
         this.currentAccount = null;
         this.autoRefresh = true;
@@ -29,7 +30,13 @@ class HackMailPro {
         this.showLoading();
         
         try {
-            const response = await fetch(`${this.baseURL}${endpoint}`, {
+            // إضافة timestamp لمنع التخزين المؤقت
+            const timestamp = new Date().getTime();
+            const url = endpoint.includes('?') 
+                ? `${this.baseURL}${endpoint}&t=${timestamp}`
+                : `${this.baseURL}${endpoint}?t=${timestamp}`;
+
+            const response = await fetch(url, {
                 headers: {
                     'Content-Type': 'application/json',
                     ...options.headers
@@ -52,9 +59,9 @@ class HackMailPro {
         }
     }
 
-    async createEmail(service = 'mailtm') {
+    async createEmail(service = 'auto') {
         try {
-            this.log(`جاري إنشاء إيميل جديد باستخدام ${service}...`, 'info');
+            this.log(`جاري إنشاء إيميل جديد...`, 'info');
             
             const result = await this.apiCall('/api/email/create', {
                 method: 'POST',
@@ -70,7 +77,8 @@ class HackMailPro {
                     email: result.email,
                     accountId: result.accountId,
                     service: result.service,
-                    token: result.token
+                    token: result.token,
+                    password: result.password
                 };
                 this.updateAccountsList();
                 this.updateServiceStatus();
@@ -78,18 +86,18 @@ class HackMailPro {
                 
                 // عرض تفاصيل الحساب
                 this.showAccountDetails(result);
+                
+                // جلب الرسائل تلقائياً بعد 3 ثواني
+                setTimeout(() => this.checkMessages(), 3000);
             }
         } catch (error) {
             this.log(`❌ فشل في إنشاء الإيميل: ${error.message}`, 'error');
             
-            // حاول مع خدمة أخرى في حالة الفشل
-            if (service === 'mailtm') {
-                this.log('🔄 جرب مع GuerrillaMail...', 'warning');
-                await this.createEmail('guerrillamail');
-            } else if (service === 'guerrillamail') {
-                this.log('🔄 جرب مع TempMail...', 'warning');
-                await this.createEmail('tempMail');
-            }
+            // محاولة إنشاء إيميل احتياطي
+            setTimeout(() => {
+                this.log('🔄 محاولة إنشاء إيميل احتياطي...', 'warning');
+                this.createEmail('auto');
+            }, 2000);
         }
     }
 
@@ -101,9 +109,10 @@ class HackMailPro {
                     <h3>✅ تم إنشاء الإيميل بنجاح</h3>
                     <div class="account-info">
                         <p><strong>📧 الإيميل:</strong> ${result.email}</p>
+                        <p><strong>🔐 كلمة المرور:</strong> ${result.password || 'غير مطلوبة'}</p>
                         <p><strong>🛠️ الخدمة:</strong> ${result.service}</p>
-                        <p><strong>🔐 كلمة المرور:</strong> ${result.password}</p>
-                        <p><strong>⏰ انتهاء الصلاحية:</strong> ${new Date(result.expiresAt).toLocaleString('ar-EG')}</p>
+                        <p><strong>🌐 النطاق:</strong> ${result.email.split('@')[1]}</p>
+                        <p><strong>⏰ انتهاء الصلاحية:</strong> ${result.expiresAt ? new Date(result.expiresAt).toLocaleString('ar-EG') : 'ساعتين'}</p>
                     </div>
                     <div class="account-actions">
                         <button class="btn btn-primary" onclick="copyToClipboard('${result.email}')">
@@ -112,13 +121,18 @@ class HackMailPro {
                         <button class="btn btn-success" onclick="checkMessages()">
                             📨 فحص الرسائل
                         </button>
+                        <button class="btn btn-warning" onclick="createEmail('auto')">
+                            🔄 إنشاء إيميل جديد
+                        </button>
                     </div>
                     <div class="account-tips">
-                        <p><strong>💡 نصائح:</strong></p>
+                        <p><strong>💡 نصائح للاستخدام:</strong></p>
                         <ul>
-                            <li>استخدم هذا الإيميل لتسجيل الحسابات المؤقتة</li>
+                            <li>انسخ الإيميل واستخدمه للتسجيل في أي منصة</li>
                             <li>الرسائل تظهر تلقائياً خلال 20 ثانية</li>
-                            <li>الإيميل صالح لمدة ساعتين</li>
+                            <li>يمكنك إنشاء multiple إيميلات في نفس الوقت</li>
+                            <li>الإيميل صالح لمدة ساعتين من وقت الإنشاء</li>
+                            <li>يعمل مع جميع المنصات: فيسبوك, جوجل, تويتر, انستجرام, etc.</li>
                         </ul>
                     </div>
                 </div>
@@ -136,12 +150,20 @@ class HackMailPro {
             this.log('جاري التحقق من الرسائل...', 'info');
             
             const result = await this.apiCall(
-                `/api/email/messages?accountId=${encodeURIComponent(this.currentAccount.email)}&service=${this.currentAccount.service}`
+                `/api/email/messages?accountId=${encodeURIComponent(this.currentAccount.accountId)}&email=${encodeURIComponent(this.currentAccount.email)}&service=${this.currentAccount.service}`
             );
             
             if (result.success) {
                 this.updateMessagesList(result.messages);
                 this.log(`✅ تم تحديث الرسائل: ${result.messages.length} رسالة`, 'success');
+                
+                // إشعار إذا كانت هناك رسائل جديدة غير مقروءة
+                const unreadMessages = result.messages.filter(msg => msg.unread);
+                if (unreadMessages.length > 0) {
+                    this.showNotification(`لديك ${unreadMessages.length} رسالة جديدة!`);
+                }
+            } else {
+                this.log('⚠️ لا توجد رسائل جديدة', 'info');
             }
         } catch (error) {
             this.log(`❌ فشل في جلب الرسائل: ${error.message}`, 'error');
@@ -154,10 +176,13 @@ class HackMailPro {
             
             if (result.success) {
                 this.updateConnectionStatus('online');
-                this.updateServicesStatus(result.services);
+                this.updateServicesStatus(result);
+            } else {
+                this.updateConnectionStatus('offline');
             }
         } catch (error) {
             this.updateConnectionStatus('offline');
+            this.log('⚠️ لا يمكن الاتصال بالخادم', 'warning');
         }
     }
 
@@ -165,11 +190,17 @@ class HackMailPro {
         try {
             const result = await this.apiCall(`/api/email/session/${this.sessionId}`);
             if (result.success && result.accounts.length > 0) {
+                // استخدام آخر حساب تم إنشاؤه
+                const lastAccount = result.accounts[0];
                 this.currentAccount = {
-                    email: result.accounts[0].email,
-                    service: result.accounts[0].service
+                    email: lastAccount.email,
+                    accountId: lastAccount.id,
+                    service: lastAccount.service
                 };
                 this.updateAccountsList();
+                
+                this.log(`📧 تم استعادة الحساب: ${lastAccount.email}`, 'success');
+                
                 // جلب الرسائل تلقائياً بعد 3 ثواني
                 setTimeout(() => this.checkMessages(), 3000);
             }
@@ -182,15 +213,27 @@ class HackMailPro {
         const statusElement = document.getElementById('servicesStatus');
         if (statusElement) {
             let statusHTML = '<div class="services-grid">';
-            for (const [service, status] of Object.entries(services)) {
-                const statusIcon = status === 'active' ? '✅' : '❌';
+            
+            // عرض الخدمات المتاحة
+            if (services.availableServices && services.availableServices.length > 0) {
+                services.availableServices.forEach(service => {
+                    const isActive = service === services.currentService;
+                    statusHTML += `
+                        <div class="service-status ${isActive ? 'active' : 'inactive'}">
+                            <span class="service-name">${service}</span>
+                            <span class="service-indicator">${isActive ? '✅' : '⚡'} ${isActive ? 'نشط' : 'احتياطي'}</span>
+                        </div>
+                    `;
+                });
+            } else {
                 statusHTML += `
-                    <div class="service-status ${status}">
-                        <span class="service-name">${service}</span>
-                        <span class="service-indicator">${statusIcon} ${status}</span>
+                    <div class="service-status active">
+                        <span class="service-name">instant</span>
+                        <span class="service-indicator">✅ نشط</span>
                     </div>
                 `;
             }
+            
             statusHTML += '</div>';
             statusElement.innerHTML = statusHTML;
         }
@@ -220,15 +263,18 @@ class HackMailPro {
                     <span class="account-email">${this.currentAccount.email}</span>
                     <span class="account-service ${this.currentAccount.service}">${this.currentAccount.service}</span>
                 </div>
+                <div class="account-meta">
+                    <small>تم الإنشاء: ${new Date().toLocaleString('ar-EG')}</small>
+                </div>
                 <div class="account-actions">
                     <button class="copy-btn" onclick="copyToClipboard('${this.currentAccount.email}')" title="نسخ الإيميل">
-                        <i class="fas fa-copy"></i>
+                        <i class="fas fa-copy"></i> نسخ
                     </button>
                     <button class="refresh-btn" onclick="checkMessages()" title="تحديث الرسائل">
-                        <i class="fas fa-sync"></i>
+                        <i class="fas fa-sync"></i> تحديث
                     </button>
                     <button class="delete-btn" onclick="deleteAccount('${this.currentAccount.email}')" title="حذف الحساب">
-                        <i class="fas fa-trash"></i>
+                        <i class="fas fa-trash"></i> حذف
                     </button>
                 </div>
             </div>
@@ -248,6 +294,8 @@ class HackMailPro {
                     <i class="fas fa-envelope-open"></i>
                     <p>لا توجد رسائل جديدة</p>
                     <small>سيتم فحص الرسائل تلقائياً كل 20 ثانية</small>
+                    <br>
+                    <small>استخدم الإيميل أعلاه للتسجيل في أي منصة وسيظهر رمز التفعيل هنا</small>
                 </div>
             `;
             messagesCount.textContent = '0';
@@ -255,23 +303,24 @@ class HackMailPro {
         }
 
         messagesList.innerHTML = messages.map(message => `
-            <div class="message-item ${message.unread ? 'unread' : ''}">
+            <div class="message-item ${message.unread ? 'unread' : ''}" onclick="viewMessage('${message.id}')">
                 <div class="message-icon">
                     <i class="fas fa-envelope${message.unread ? '' : '-open'}"></i>
                 </div>
                 <div class="message-content">
                     <div class="message-header">
-                        <strong class="message-subject">${message.subject}</strong>
-                        <span class="message-date">${message.date}</span>
+                        <strong class="message-subject">${message.subject || 'بدون عنوان'}</strong>
+                        <span class="message-date">${message.date || new Date().toLocaleString('ar-EG')}</span>
                     </div>
-                    <div class="message-preview">${message.preview}</div>
+                    <div class="message-preview">${message.preview || 'لا يوجد معاينة'}</div>
                     <div class="message-sender">
                         <i class="fas fa-user"></i>
-                        <span>${message.sender}</span>
+                        <span>${message.sender || 'مرسل غير معروف'}</span>
+                        ${message.unread ? '<span class="unread-badge">جديد</span>' : ''}
                     </div>
                 </div>
                 <div class="message-actions">
-                    <button class="btn btn-small" onclick="viewMessage('${message.id}')" title="عرض الرسالة">
+                    <button class="btn btn-small" onclick="event.stopPropagation(); viewMessage('${message.id}')" title="عرض الرسالة">
                         <i class="fas fa-eye"></i>
                     </button>
                 </div>
@@ -281,8 +330,10 @@ class HackMailPro {
         messagesCount.textContent = messages.length.toString();
         
         // إشعار إذا كانت هناك رسائل جديدة
-        if (messages.length > 0) {
-            this.log(`📬 لديك ${messages.length} رسالة جديدة`, 'success');
+        const unreadCount = messages.filter(msg => msg.unread).length;
+        if (unreadCount > 0) {
+            this.log(`📬 لديك ${unreadCount} رسالة جديدة`, 'success');
+            this.showNotification(`📨 ${unreadCount} رسالة جديدة!`);
         }
     }
 
@@ -290,8 +341,9 @@ class HackMailPro {
         if (!this.currentAccount) return;
         
         try {
+            this.showLoading();
             const result = await this.apiCall(
-                `/api/email/messages/${messageId}?accountId=${encodeURIComponent(this.currentAccount.email)}&service=${this.currentAccount.service}`
+                `/api/email/messages/${messageId}?accountId=${encodeURIComponent(this.currentAccount.accountId)}&email=${encodeURIComponent(this.currentAccount.email)}&service=${this.currentAccount.service}`
             );
             
             if (result.success) {
@@ -299,14 +351,16 @@ class HackMailPro {
             }
         } catch (error) {
             this.log(`❌ فشل في عرض الرسالة: ${error.message}`, 'error');
+        } finally {
+            this.hideLoading();
         }
     }
 
     showMessageDetails(message) {
         const outputElement = document.getElementById('output');
         if (outputElement) {
-            const content = message.content || message.mail_body || message.text || 'لا يوجد محتوى';
-            const sender = message.sender || message.mail_from || message.from?.address || 'غير معروف';
+            const content = message.content || message.text || message.mail_body || 'لا يوجد محتوى';
+            const sender = message.sender || message.from?.name || message.from?.address || message.mail_from || 'غير معروف';
             const subject = message.subject || message.mail_subject || 'بدون عنوان';
             const date = message.date || new Date().toLocaleString('ar-EG');
             
@@ -315,19 +369,25 @@ class HackMailPro {
                     <div class="message-header">
                         <h3>${subject}</h3>
                         <button class="btn btn-small" onclick="checkMessages()">
-                            <i class="fas fa-arrow-left"></i> رجوع
+                            <i class="fas fa-arrow-left"></i> رجوع للقائمة
                         </button>
                     </div>
                     <div class="message-meta">
                         <p><strong>👤 المرسل:</strong> ${sender}</p>
                         <p><strong>📅 التاريخ:</strong> ${date}</p>
+                        <p><strong>📧 إلى:</strong> ${this.currentAccount?.email || 'غير معروف'}</p>
                     </div>
                     <div class="message-body">
-                        <pre>${content}</pre>
+                        <div class="message-content">
+                            <pre>${content}</pre>
+                        </div>
                     </div>
                     <div class="message-actions">
-                        <button class="btn" onclick="copyToClipboard(\`${content}\`)">
+                        <button class="btn btn-primary" onclick="copyToClipboard(\`${content.replace(/`/g, '\\`')}\`)">
                             <i class="fas fa-copy"></i> نسخ المحتوى
+                        </button>
+                        <button class="btn" onclick="checkMessages()">
+                            <i class="fas fa-sync"></i> تحديث الرسائل
                         </button>
                     </div>
                 </div>
@@ -394,6 +454,44 @@ class HackMailPro {
         }
     }
 
+    showNotification(message) {
+        // إنشاء إشعار مؤقت
+        const notification = document.createElement('div');
+        notification.className = 'notification';
+        notification.innerHTML = `
+            <div class="notification-content">
+                <i class="fas fa-bell"></i>
+                <span>${message}</span>
+            </div>
+        `;
+        
+        notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            padding: 15px 20px;
+            border-radius: 8px;
+            z-index: 10000;
+            font-weight: bold;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            animation: slideInRight 0.3s ease-out;
+            max-width: 300px;
+        `;
+        
+        document.body.appendChild(notification);
+        
+        setTimeout(() => {
+            notification.style.animation = 'slideOutRight 0.3s ease-in';
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            }, 300);
+        }, 4000);
+    }
+
     log(message, type = 'info') {
         const consoleOutput = document.getElementById('consoleOutput');
         if (!consoleOutput) return;
@@ -416,6 +514,12 @@ class HackMailPro {
         
         consoleOutput.appendChild(logEntry);
         consoleOutput.scrollTop = consoleOutput.scrollHeight;
+        
+        // حفظ عدد محدود من السجلات
+        const logs = consoleOutput.querySelectorAll('.log-entry');
+        if (logs.length > 50) {
+            logs[0].remove();
+        }
     }
 
     showLoading() {
@@ -431,6 +535,35 @@ class HackMailPro {
             loadingOverlay.style.display = 'none';
         }
     }
+
+    // دالة لإعادة تعيين النظام
+    async resetSystem() {
+        try {
+            const result = await this.apiCall('/api/email/services/reset', {
+                method: 'POST'
+            });
+            
+            if (result.success) {
+                this.log('✅ تم إعادة تعيين النظام بنجاح', 'success');
+                this.currentAccount = null;
+                this.updateAccountsList();
+                this.updateMessagesList([]);
+                
+                const outputElement = document.getElementById('output');
+                if (outputElement) {
+                    outputElement.innerHTML = `
+                        <div class="empty-state">
+                            <i class="fas fa-redo"></i>
+                            <p>تم إعادة تعيين النظام</p>
+                            <small>يمكنك إنشاء إيميل جديد الآن</small>
+                        </div>
+                    `;
+                }
+            }
+        } catch (error) {
+            this.log('❌ فشل في إعادة تعيين النظام', 'error');
+        }
+    }
 }
 
 // الدوال العامة للاستخدام في الأزرار
@@ -439,29 +572,40 @@ function copyToClipboard(text) {
         if (window.hackmail) {
             window.hackmail.log('تم نسخ النص إلى الحافظة', 'success');
         }
-        // إشعار مؤقت
         showTempNotification('تم النسخ إلى الحافظة!');
     }).catch(err => {
+        // طريقة بديلة للنسخ
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        
         if (window.hackmail) {
-            window.hackmail.log('فشل في النسخ', 'error');
+            window.hackmail.log('تم النسخ إلى الحافظة', 'success');
         }
+        showTempNotification('تم النسخ إلى الحافظة!');
     });
 }
 
 function showTempNotification(message) {
     const notification = document.createElement('div');
-    notification.className = 'notification';
+    notification.className = 'temp-notification';
     notification.textContent = message;
     notification.style.cssText = `
         position: fixed;
         top: 20px;
-        right: 20px;
+        left: 50%;
+        transform: translateX(-50%);
         background: var(--success-color);
         color: #000;
-        padding: 10px 20px;
-        border-radius: 5px;
+        padding: 12px 24px;
+        border-radius: 8px;
         z-index: 10000;
         font-weight: bold;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        animation: fadeInOut 3s ease-in-out;
     `;
     document.body.appendChild(notification);
     
@@ -470,7 +614,7 @@ function showTempNotification(message) {
     }, 3000);
 }
 
-function createEmail(service = 'mailtm') {
+function createEmail(service = 'auto') {
     if (window.hackmail) {
         window.hackmail.createEmail(service);
     }
@@ -517,9 +661,79 @@ function selectService(service) {
     createEmail(service);
 }
 
+// إضافة أنيميشن للـ CSS
+const style = document.createElement('style');
+style.textContent = `
+    @keyframes slideInRight {
+        from {
+            transform: translateX(100%);
+            opacity: 0;
+        }
+        to {
+            transform: translateX(0);
+            opacity: 1;
+        }
+    }
+    
+    @keyframes slideOutRight {
+        from {
+            transform: translateX(0);
+            opacity: 1;
+        }
+        to {
+            transform: translateX(100%);
+            opacity: 0;
+        }
+    }
+    
+    @keyframes fadeInOut {
+        0% { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+        20% { opacity: 1; transform: translateX(-50%) translateY(0); }
+        80% { opacity: 1; transform: translateX(-50%) translateY(0); }
+        100% { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+    }
+    
+    .notification-content {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    
+    .unread-badge {
+        background: var(--primary-color);
+        color: #000;
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-size: 10px;
+        font-weight: bold;
+        margin-right: 8px;
+    }
+    
+    .temp-notification {
+        font-family: 'Tajawal', sans-serif;
+    }
+`;
+document.head.appendChild(style);
+
 // تهيئة النظام عند تحميل الصفحة
 document.addEventListener('DOMContentLoaded', () => {
+    // تحديد الـ Base URL تلقائياً إذا لم يكن محدداً
+    if (!window.BASE_URL) {
+        window.BASE_URL = window.location.origin;
+    }
+    
     window.hackmail = new HackMailPro();
+    
+    // إضافة event listener لأزرار الخدمات
+    const serviceButtons = document.querySelectorAll('.service-btn');
+    serviceButtons.forEach(btn => {
+        btn.addEventListener('click', function() {
+            serviceButtons.forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+            const service = this.getAttribute('data-service');
+            createEmail(service);
+        });
+    });
 });
 
 // تحديث الحالة كل دقيقة
@@ -528,3 +742,13 @@ setInterval(() => {
         window.hackmail.loadServiceStatus();
     }
 }, 60000);
+
+// تحديث العنوان تلقائياً مع حالة الاتصال
+setInterval(() => {
+    if (window.hackmail && document.title) {
+        const isOnline = document.getElementById('connectionStatus')?.textContent.includes('متصل');
+        document.title = isOnline 
+            ? 'HackMail Pro - نظام الإيميل المؤقت 🟢' 
+            : 'HackMail Pro - نظام الإيميل المؤقت 🔴';
+    }
+}, 5000);
