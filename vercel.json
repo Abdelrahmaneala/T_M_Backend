@@ -2,21 +2,22 @@
   "version": 2,
   "builds": [
     {
-      "src": "src/server.js",
+      "src": "api/email.js",
       "use": "@vercel/node"
+    },
+    {
+      "src": "public/**/*",
+      "use": "@vercel/static"
     }
   ],
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "src/server.js"
+      "dest": "/api/email.js"
     },
     {
       "src": "/(.*)",
-      "dest": "src/server.js"
+      "dest": "/public/$1"
     }
-  ],
-  "env": {
-    "NODE_ENV": "production"
-  }
+  ]
 }
