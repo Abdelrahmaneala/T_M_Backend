@@ -384,3 +384,71 @@ body {
     background: var(--secondary-color);
     color: white;
 }
+/* إضافة هذه التنسيقات لملف style.css */
+
+.service-status {
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    margin-left: 5px;
+}
+
+.service-status.active {
+    background: var(--success-color);
+    color: #000;
+}
+
+.service-status.inactive {
+    background: var(--danger-color);
+    color: #fff;
+}
+
+.account-details, .message-details {
+    background: var(--bg-panel);
+    padding: 15px;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    margin-bottom: 15px;
+}
+
+.account-details h3, .message-details h3 {
+    color: var(--primary-color);
+    margin-bottom: 10px;
+}
+
+.btn-small {
+    padding: 5px 10px;
+    font-size: 12px;
+    margin-top: 5px;
+}
+
+.message-actions {
+    margin-top: 10px;
+    display: flex;
+    gap: 5px;
+}
+
+.message-content {
+    background: var(--bg-dark);
+    padding: 15px;
+    border-radius: 4px;
+    margin-top: 10px;
+    white-space: pre-wrap;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.control-btn.service {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+}
+
+.service-icon {
+    font-size: 20px;
+}
+
+.service-name {
+    font-size: 12px;
+}
