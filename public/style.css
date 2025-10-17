@@ -452,3 +452,325 @@ body {
 .service-name {
     font-size: 12px;
 }
+/* تنسيقات الإشعارات */
+.notification {
+    animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+/* تنسيقات الخدمات */
+.services-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.service-status {
+    padding: 8px 12px;
+    border-radius: 6px;
+    text-align: center;
+    font-size: 12px;
+    border: 1px solid var(--border-color);
+}
+
+.service-status.active {
+    background: rgba(0, 255, 0, 0.1);
+    border-color: var(--success-color);
+    color: var(--success-color);
+}
+
+.service-status.inactive {
+    background: rgba(255, 0, 0, 0.1);
+    border-color: var(--danger-color);
+    color: var(--danger-color);
+}
+
+.service-status.limited {
+    background: rgba(255, 165, 0, 0.1);
+    border-color: var(--warning-color);
+    color: var(--warning-color);
+}
+
+/* تنسيقات الأزرار */
+.service-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    padding: 10px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-panel);
+    color: var(--text-primary);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.service-btn:hover {
+    border-color: var(--secondary-color);
+    transform: translateY(-2px);
+}
+
+.service-btn.active {
+    border-color: var(--primary-color);
+    background: rgba(0, 255, 0, 0.1);
+}
+
+.service-icon {
+    font-size: 20px;
+}
+
+/* تنسيقات الحسابات */
+.account-item.active {
+    border-left: 4px solid var(--success-color);
+}
+
+.account-service.mailtm {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+}
+
+.account-service.guerrillamail {
+    background: linear-gradient(135deg, #f093fb, #f5576c);
+}
+
+.account-service.tempMail {
+    background: linear-gradient(135deg, #4facfe, #00f2fe);
+}
+
+/* تنسيقات الرسائل */
+.message-item.unread {
+    border-left: 4px solid var(--primary-color);
+    background: rgba(0, 255, 0, 0.05);
+}
+
+.message-item {
+    display: flex;
+    gap: 15px;
+    padding: 15px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    margin-bottom: 10px;
+    transition: all 0.3s ease;
+}
+
+.message-item:hover {
+    border-color: var(--secondary-color);
+    transform: translateX(-5px);
+}
+
+.message-icon {
+    font-size: 20px;
+    color: var(--secondary-color);
+}
+
+.message-content {
+    flex: 1;
+}
+
+.message-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 8px;
+}
+
+.message-subject {
+    color: var(--text-primary);
+    font-weight: bold;
+    margin-right: 10px;
+}
+
+.message-date {
+    color: var(--text-secondary);
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.message-preview {
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 1.4;
+    margin-bottom: 8px;
+}
+
+.message-sender {
+    color: var(--text-secondary);
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.message-actions {
+    display: flex;
+    gap: 5px;
+}
+
+/* تنسيقات التفاصيل */
+.account-details, .message-details {
+    background: var(--bg-panel);
+    padding: 20px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    margin-bottom: 20px;
+}
+
+.account-info, .message-meta {
+    margin: 15px 0;
+}
+
+.account-info p, .message-meta p {
+    margin: 8px 0;
+    padding: 8px 12px;
+    background: var(--bg-dark);
+    border-radius: 4px;
+    border-left: 3px solid var(--primary-color);
+}
+
+.account-actions, .message-actions {
+    display: flex;
+    gap: 10px;
+    margin: 15px 0;
+    flex-wrap: wrap;
+}
+
+.account-tips {
+    margin-top: 20px;
+    padding: 15px;
+    background: rgba(0, 100, 255, 0.1);
+    border-radius: 6px;
+    border-left: 4px solid var(--secondary-color);
+}
+
+.account-tips ul {
+    margin: 10px 0;
+    padding-right: 20px;
+}
+
+.account-tips li {
+    margin: 5px 0;
+    color: var(--text-secondary);
+}
+
+.message-body {
+    margin: 20px 0;
+    padding: 20px;
+    background: var(--bg-dark);
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.message-body pre {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    color: var(--text-primary);
+    line-height: 1.5;
+    margin: 0;
+}
+
+/* تحسين التنسيقات العامة */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-dark);
+    color: var(--text-primary);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-family: inherit;
+    font-size: 14px;
+    text-decoration: none;
+}
+
+.btn:hover {
+    border-color: var(--secondary-color);
+    transform: translateY(-2px);
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, var(--secondary-color), #0066cc);
+    border-color: var(--secondary-color);
+    color: white;
+}
+
+.btn-success {
+    background: linear-gradient(135deg, var(--success-color), #00cc66);
+    border-color: var(--success-color);
+    color: #000;
+}
+
+.btn-small {
+    padding: 6px 12px;
+    font-size: 12px;
+}
+
+/* تنسيقات سجل النظام */
+.log-entry {
+    display: flex;
+    gap: 10px;
+    padding: 5px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.log-entry:last-child {
+    border-bottom: none;
+}
+
+.log-entry.success { color: var(--success-color); }
+.log-entry.error { color: var(--danger-color); }
+.log-entry.warning { color: var(--warning-color); }
+.log-entry.info { color: var(--secondary-color); }
+
+.type-icon {
+    font-size: 12px;
+    width: 20px;
+    text-align: center;
+}
+
+.timestamp {
+    color: var(--text-secondary);
+    font-size: 11px;
+    min-width: 70px;
+}
+
+/* تحسين الاستجابة */
+@media (max-width: 768px) {
+    .message-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 5px;
+    }
+    
+    .message-date {
+        align-self: flex-end;
+    }
+    
+    .account-actions, .message-actions {
+        flex-direction: column;
+    }
+    
+    .btn {
+        width: 100%;
+        justify-content: center;
+    }
+    
+    .services-grid {
+        grid-template-columns: 1fr;
+    }
+}
