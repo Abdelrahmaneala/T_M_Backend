@@ -2,7 +2,7 @@
   "version": 2,
   "builds": [
     {
-      "src": "api/email.js",
+      "src": "api/index.js",
       "use": "@vercel/node"
     },
     {
@@ -13,11 +13,14 @@
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "/api/email.js"
+      "dest": "/api/index.js"
     },
     {
       "src": "/(.*)",
       "dest": "/public/$1"
     }
-  ]
+  ],
+  "env": {
+    "NODE_ENV": "production"
+  }
 }
