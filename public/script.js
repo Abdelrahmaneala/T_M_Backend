@@ -3,7 +3,8 @@ class HackMailPro {
         this.baseURL = window.location.origin;
         this.sessionId = this.generateSessionId();
         this.currentAccount = null;
-        this.autoRefresh = false;
+        this.autoRefresh = true;
+        this.refreshInterval = null;
         
         this.init();
     }
@@ -13,12 +14,11 @@ class HackMailPro {
         this.updateConnectionStatus();
         this.loadServiceStatus();
         
-        // تحديث تلقائي كل 30 ثانية
-        setInterval(() => {
-            if (this.autoRefresh && this.currentAccount) {
-                this.checkMessages();
-            }
-        }, 30000);
+        // تحديث تلقائي كل 15 ثانية
+        this.startAutoRefresh();
+        
+        // تحميل الحسابات النشطة
+        this.loadSessionAccounts();
     }
 
     generateSessionId() {
@@ -52,24 +52,55 @@ class HackMailPro {
         }
     }
 
-    async createEmail() {
+    async createEmail(service = 'mailtm') {
         try {
-            this.log('جاري إنشاء إيميل جديد...', 'info');
+            this.log(`جاري إنشاء إيميل جديد باستخدام ${service}...`, 'info');
             
             const result = await this.apiCall('/api/email/create', {
                 method: 'POST',
-                body: JSON.stringify({ sessionId: this.sessionId })
+                body: JSON.stringify({ 
+                    sessionId: this.sessionId,
+                    service: service 
+                })
             });
 
             if (result.success) {
                 this.log(`✅ تم إنشاء الإيميل: ${result.email}`, 'success');
-                this.currentAccount = result;
+                this.currentAccount = {
+                    email: result.email,
+                    accountId: result.accountId,
+                    service: result.service,
+                    token: result.token
+                };
                 this.updateAccountsList();
                 this.updateServiceStatus();
                 this.autoRefresh = true;
+                
+                // عرض تفاصيل الحساب
+                document.getElementById('output').innerHTML = `
+                    <div class="account-details">
+                        <h3>✅ تم إنشاء الإيميل بنجاح</h3>
+                        <p><strong>الإيميل:</strong> ${result.email}</p>
+                        <p><strong>الخدمة:</strong> ${result.service}</p>
+                        <p><strong>كلمة المرور:</strong> ${result.password}</p>
+                        <p><strong>انتهاء الصلاحية:</strong> ${new Date(result.expiresAt).toLocaleString('ar-EG')}</p>
+                        <button class="btn btn-primary" onclick="copyToClipboard('${result.email}')">
+                            نسخ الإيميل
+                        </button>
+                        <button class="btn" onclick="checkMessages()">
+                            فحص الرسائل
+                        </button>
+                    </div>
+                `;
             }
         } catch (error) {
             this.log(`❌ فشل في إنشاء الإيميل: ${error.message}`, 'error');
+            
+            // حاول مع خدمة أخرى في حالة الفشل
+            if (service === 'mailtm') {
+                this.log('🔄 جرب مع GuerrillaMail...', 'warning');
+                await this.createEmail('guerrillamail');
+            }
         }
     }
 
@@ -82,7 +113,9 @@ class HackMailPro {
         try {
             this.log('جاري التحقق من الرسائل...', 'info');
             
-            const result = await this.apiCall(`/api/email/messages?accountId=${this.currentAccount.accountId}`);
+            const result = await this.apiCall(
+                `/api/email/messages?accountId=${this.currentAccount.email}&service=${this.currentAccount.service}`
+            );
             
             if (result.success) {
                 this.updateMessagesList(result.messages);
@@ -108,7 +141,7 @@ class HackMailPro {
             });
 
             if (result.success) {
-                this.log(`✅ تم التبديل إلى خدمة: ${result.currentService}`, 'success');
+                this.log(`✅ ${result.message}`, 'success');
                 this.updateServiceStatus();
             }
         } catch (error) {
@@ -125,11 +158,12 @@ class HackMailPro {
             });
 
             if (result.success) {
-                this.log('✅ تم إعادة تعيين النظام بنجاح', 'success');
+                this.log(`✅ ${result.message}`, 'success');
                 this.currentAccount = null;
                 this.updateAccountsList();
                 this.updateMessagesList([]);
                 this.updateServiceStatus();
+                this.loadSessionAccounts();
             }
         } catch (error) {
             this.log(`❌ فشل في إعادة التعيين: ${error.message}`, 'error');
@@ -141,11 +175,41 @@ class HackMailPro {
             const result = await this.apiCall('/api/email/services/status');
             
             if (result.success) {
-                document.getElementById('currentService').textContent = result.currentService;
+                document.getElementById('currentService').textContent = 'mailtm';
                 this.updateConnectionStatus('online');
+                
+                // تحديث حالة الخدمات في الواجهة
+                this.updateServicesStatus(result.services);
             }
         } catch (error) {
             this.updateConnectionStatus('offline');
+        }
+    }
+
+    async loadSessionAccounts() {
+        try {
+            const result = await this.apiCall(`/api/email/session/${this.sessionId}`);
+            if (result.success && result.accounts.length > 0) {
+                this.currentAccount = {
+                    email: result.accounts[0].email,
+                    service: result.accounts[0].service
+                };
+                this.updateAccountsList();
+                this.checkMessages(); // جلب الرسائل تلقائياً
+            }
+        } catch (error) {
+            console.log('No active accounts in session');
+        }
+    }
+
+    updateServicesStatus(services) {
+        const statusElement = document.getElementById('servicesStatus');
+        if (statusElement) {
+            let statusHTML = '';
+            for (const [service, status] of Object.entries(services)) {
+                statusHTML += `<span class="service-status ${status}">${service}: ${status}</span> `;
+            }
+            statusElement.innerHTML = statusHTML;
         }
     }
 
@@ -174,7 +238,10 @@ class HackMailPro {
                     </button>
                 </div>
                 <div class="account-info">
-                    <small>تم الإنشاء: ${new Date().toLocaleString('ar-EG')}</small>
+                    <small>الخدمة: ${this.currentAccount.service}</small>
+                    <button class="btn btn-small" onclick="deleteAccount('${this.currentAccount.email}')">
+                        حذف
+                    </button>
                 </div>
             </div>
         `;
@@ -206,16 +273,77 @@ class HackMailPro {
                 <div class="message-sender">
                     <small>من: ${message.sender}</small>
                 </div>
+                <div class="message-actions">
+                    <button class="btn btn-small" onclick="viewMessage('${message.id}')">
+                        عرض
+                    </button>
+                </div>
             </div>
         `).join('');
         
         messagesCount.textContent = messages.length.toString();
     }
 
+    async viewMessage(messageId) {
+        if (!this.currentAccount) return;
+        
+        try {
+            const result = await this.apiCall(
+                `/api/email/messages/${messageId}?accountId=${this.currentAccount.email}&service=${this.currentAccount.service}`
+            );
+            
+            if (result.success) {
+                document.getElementById('output').innerHTML = `
+                    <div class="message-details">
+                        <h3>${result.message.subject}</h3>
+                        <p><strong>من:</strong> ${result.message.sender}</p>
+                        <p><strong>التاريخ:</strong> ${result.message.date}</p>
+                        <div class="message-content">
+                            ${result.message.content || result.message.mail_body || 'لا يوجد محتوى'}
+                        </div>
+                    </div>
+                `;
+            }
+        } catch (error) {
+            this.log(`❌ فشل في عرض الرسالة: ${error.message}`, 'error');
+        }
+    }
+
+    async deleteAccount(email) {
+        try {
+            const result = await this.apiCall(`/api/email/${email}`, {
+                method: 'DELETE'
+            });
+            
+            if (result.success) {
+                this.log(`✅ ${result.message}`, 'success');
+                this.currentAccount = null;
+                this.updateAccountsList();
+                this.updateMessagesList([]);
+            }
+        } catch (error) {
+            this.log(`❌ فشل في حذف الحساب: ${error.message}`, 'error');
+        }
+    }
+
+    startAutoRefresh() {
+        if (this.refreshInterval) {
+            clearInterval(this.refreshInterval);
+        }
+        
+        this.refreshInterval = setInterval(() => {
+            if (this.autoRefresh && this.currentAccount) {
+                this.checkMessages();
+            }
+        }, 15000); // تحديث كل 15 ثانية
+    }
+
     updateConnectionStatus(status = 'online') {
         const statusElement = document.getElementById('connectionStatus');
-        statusElement.textContent = status === 'online' ? 'متصل' : 'غير متصل';
-        statusElement.className = status === 'online' ? 'status-online' : 'status-offline';
+        if (statusElement) {
+            statusElement.textContent = status === 'online' ? 'متصل' : 'غير متصل';
+            statusElement.className = status === 'online' ? 'status-online' : 'status-offline';
+        }
     }
 
     updateServiceStatus() {
@@ -257,8 +385,8 @@ function copyToClipboard(text) {
     });
 }
 
-function createEmail() {
-    hackmail.createEmail();
+function createEmail(service = 'mailtm') {
+    hackmail.createEmail(service);
 }
 
 function checkMessages() {
@@ -270,8 +398,18 @@ function rotateService() {
 }
 
 function resetSystem() {
-    if (confirm('هل أنت متأكد من إعادة تعيين النظام؟')) {
+    if (confirm('هل أنت متأكد من إعادة تعيين النظام؟ سيتم حذف جميع الحسابات.')) {
         hackmail.resetSystem();
+    }
+}
+
+function viewMessage(messageId) {
+    hackmail.viewMessage(messageId);
+}
+
+function deleteAccount(email) {
+    if (confirm('هل أنت متأكد من حذف هذا الحساب؟')) {
+        hackmail.deleteAccount(email);
     }
 }
 
@@ -281,9 +419,9 @@ document.addEventListener('DOMContentLoaded', () => {
     hackmail = new HackMailPro();
 });
 
-// تحديث الحالة كل 10 ثوان
+// تحديث الحالة كل 30 ثانية
 setInterval(() => {
     if (hackmail) {
         hackmail.loadServiceStatus();
     }
-}, 10000);
+}, 30000);
