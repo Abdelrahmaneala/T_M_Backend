@@ -1,12 +1,11 @@
 {
   "name": "hackmail-pro-vercel",
-  "version": "3.0.0",
-  "description": "نظام الإيميل المؤقت المضمون - الإصدار المخصص لـ Vercel",
+  "version": "4.0.0",
+  "description": "Real Temporary Email System for Vercel",
   "main": "api/index.js",
   "scripts": {
     "start": "node api/index.js",
-    "dev": "node api/index.js",
-    "vercel-build": "echo 'No build needed'"
+    "dev": "node api/index.js"
   },
   "dependencies": {
     "express": "^4.18.2",
@@ -19,12 +18,8 @@
     "temporary",
     "disposable",
     "hackmail",
-    "vercel",
-    "arabic"
+    "vercel"
   ],
   "author": "HackMail Team",
-  "license": "MIT",
-  "engines": {
-    "node": ">=18.x"
-  }
+  "license": "MIT"
 }
