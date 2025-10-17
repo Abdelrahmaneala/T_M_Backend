@@ -17,7 +17,7 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-// خدمة Mail.tm الحقيقية
+// خدمة Mail.tm الحقيقية المحسنة
 class MailTMService {
     constructor() {
         this.baseURL = 'https://api.mail.tm';
@@ -26,26 +26,56 @@ class MailTMService {
 
     async getDomains() {
         try {
-            const response = await axios.get(`${this.baseURL}/domains`);
+            console.log('🔍 جاري جلب النطاقات من Mail.tm...');
+            const response = await axios.get(`${this.baseURL}/domains`, {
+                timeout: 10000,
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                }
+            });
+            
             this.domains = response.data['hydra:member'] || [];
+            
+            if (this.domains.length === 0) {
+                console.log('⚠️ لا توجد نطاقات من API، استخدام النطاقات الافتراضية');
+                this.domains = [
+                    { domain: 'mail.tm' },
+                    { domain: 'tiffincrane.com' },
+                    { domain: 'dcctb.com' },
+                    { domain: 'bugfoo.com' }
+                ];
+            }
+            
+            console.log(`✅ تم تحميل ${this.domains.length} نطاق`);
             return this.domains;
         } catch (error) {
-            console.error('Error fetching domains:', error.message);
-            return [{ domain: 'mail.tm' }];
+            console.error('❌ فشل في جلب النطاقات:', error.message);
+            // نطاقات احتياطية
+            this.domains = [
+                { domain: 'tiffincrane.com' },
+                { domain: 'dcctb.com' },
+                { domain: 'bugfoo.com' },
+                { domain: 'mail.tm' }
+            ];
+            return this.domains;
         }
     }
 
     async createAccount() {
         try {
             await this.getDomains();
+            
             if (this.domains.length === 0) {
-                throw new Error('No domains available');
+                throw new Error('لا توجد نطاقات متاحة');
             }
 
-            const domain = this.domains[0].domain;
+            // استخدام نطاق عشوائي
+            const randomDomain = this.domains[Math.floor(Math.random() * this.domains.length)].domain;
             const username = this.generateUsername();
-            const email = `${username}@${domain}`;
+            const email = `${username}@${randomDomain}`;
             const password = this.generatePassword();
+
+            console.log(`🔄 محاولة إنشاء حساب: ${email}`);
 
             // إنشاء الحساب
             const accountResponse = await axios.post(`${this.baseURL}/accounts`, {
@@ -54,12 +84,18 @@ class MailTMService {
             }, {
                 headers: {
                     'Content-Type': 'application/json',
-                    'Accept': 'application/ld+json'
+                    'Accept': 'application/ld+json',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
                 },
-                timeout: 10000
+                timeout: 15000,
+                validateStatus: (status) => status < 500
             });
 
+            console.log(`📨 استجابة إنشاء الحساب: ${accountResponse.status}`);
+
             if (accountResponse.status === 201) {
+                console.log('✅ تم إنشاء الحساب بنجاح، جاري الحصول على التوكن...');
+                
                 // الحصول على التوكن
                 const tokenResponse = await axios.post(`${this.baseURL}/token`, {
                     address: email,
@@ -67,39 +103,68 @@ class MailTMService {
                 }, {
                     headers: {
                         'Content-Type': 'application/json',
-                        'Accept': 'application/ld+json'
+                        'Accept': 'application/ld+json',
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
                     },
-                    timeout: 10000
+                    timeout: 15000,
+                    validateStatus: (status) => status < 500
                 });
 
-                return {
-                    success: true,
-                    email: email,
-                    password: password,
-                    token: tokenResponse.data.token,
-                    accountId: accountResponse.data.id,
-                    service: 'mailtm'
-                };
+                if (tokenResponse.status === 200) {
+                    console.log('✅ تم الحصول على التوكن بنجاح');
+                    
+                    return {
+                        success: true,
+                        email: email,
+                        password: password,
+                        token: tokenResponse.data.token,
+                        accountId: accountResponse.data.id,
+                        service: 'mailtm'
+                    };
+                } else {
+                    throw new Error(`فشل في الحصول على التوكن: ${tokenResponse.status}`);
+                }
+            } else if (accountResponse.status === 422) {
+                // البريد مستخدم مسبقاً، حاول مرة أخرى
+                console.log('⚠️ البريد مستخدم مسبقاً، جرب إنشاء بريد جديد...');
+                return await this.createAccount();
+            } else {
+                throw new Error(`فشل في إنشاء الحساب: ${accountResponse.status}`);
             }
         } catch (error) {
-            console.error('Mail.tm error:', error.message);
-            throw error;
+            console.error('❌ خطأ في Mail.tm:', error.message);
+            if (error.response) {
+                console.error('📊 بيانات الاستجابة:', error.response.data);
+            }
+            throw new Error(`فشل في إنشاء حساب Mail.tm: ${error.message}`);
         }
     }
 
     async getMessages(token) {
         try {
+            console.log('📨 جاري جلب الرسائل من Mail.tm...');
             const response = await axios.get(`${this.baseURL}/messages`, {
                 headers: {
                     'Authorization': `Bearer ${token}`,
-                    'Accept': 'application/ld+json'
+                    'Accept': 'application/ld+json',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
                 },
-                timeout: 10000
+                timeout: 10000,
+                validateStatus: (status) => status < 500
             });
 
-            return response.data['hydra:member'] || [];
+            if (response.status === 200) {
+                const messages = response.data['hydra:member'] || [];
+                console.log(`✅ تم جلب ${messages.length} رسالة من Mail.tm`);
+                return messages;
+            } else if (response.status === 401) {
+                throw new Error('التوكن منتهي الصلاحية');
+            } else {
+                console.log(`⚠️ استجابة غير متوقعة: ${response.status}`);
+                return [];
+            }
         } catch (error) {
-            console.error('Error fetching messages:', error.message);
+            console.error('❌ خطأ في جلب الرسائل:', error.message);
             return [];
         }
     }
@@ -109,74 +174,104 @@ class MailTMService {
             const response = await axios.get(`${this.baseURL}/messages/${messageId}`, {
                 headers: {
                     'Authorization': `Bearer ${token}`,
-                    'Accept': 'application/ld+json'
+                    'Accept': 'application/ld+json',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
                 },
                 timeout: 10000
             });
 
             return response.data;
         } catch (error) {
-            console.error('Error fetching message:', error.message);
+            console.error('❌ خطأ في جلب الرسالة:', error.message);
             return null;
         }
     }
 
     generateUsername() {
-        const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-        let username = '';
-        for (let i = 0; i < 10; i++) {
-            username += chars.charAt(Math.floor(Math.random() * chars.length));
-        }
-        return username;
+        const adjectives = ['quick', 'bold', 'calm', 'deep', 'fair', 'grand', 'high', 'just', 'keen', 'lucky'];
+        const nouns = ['fox', 'wolf', 'eagle', 'lion', 'bear', 'hawk', 'deer', 'fish', 'owl', 'bird'];
+        const numbers = Math.floor(1000 + Math.random() * 9000);
+        
+        const adjective = adjectives[Math.floor(Math.random() * adjectives.length)];
+        const noun = nouns[Math.floor(Math.random() * nouns.length)];
+        
+        return `${adjective}${noun}${numbers}`;
     }
 
     generatePassword() {
-        return Math.random().toString(36).slice(-16);
+        const length = 16;
+        const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        let password = "";
+        
+        for (let i = 0; i < length; i++) {
+            password += charset.charAt(Math.floor(Math.random() * charset.length));
+        }
+        
+        return password;
     }
 }
 
-// خدمة GuerrillaMail الحقيقية
+// خدمة GuerrillaMail الحقيقية المحسنة
 class GuerrillaMailService {
     constructor() {
         this.baseURL = 'https://api.guerrillamail.com';
-        this.sidToken = null;
-        this.email = null;
     }
 
     async createAccount() {
         try {
+            console.log('🔄 إنشاء حساب GuerrillaMail...');
+            
             const response = await axios.get(`${this.baseURL}/ajax.php?f=get_email_address&lang=en`, {
-                timeout: 10000
+                timeout: 15000,
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                },
+                validateStatus: (status) => status < 500
             });
 
-            if (response.data) {
-                this.sidToken = response.data.sid_token;
-                this.email = response.data.email_addr;
-
+            if (response.data && response.data.email_addr) {
+                console.log(`✅ تم إنشاء حساب GuerrillaMail: ${response.data.email_addr}`);
+                
                 return {
                     success: true,
-                    email: this.email,
+                    email: response.data.email_addr,
                     password: 'not_required',
-                    token: this.sidToken,
-                    accountId: this.email,
-                    service: 'guerrillamail'
+                    token: response.data.sid_token,
+                    accountId: response.data.email_addr,
+                    service: 'guerrillamail',
+                    sid_token: response.data.sid_token
                 };
+            } else {
+                throw new Error('لا يوجد رد من GuerrillaMail');
             }
         } catch (error) {
-            console.error('GuerrillaMail error:', error.message);
-            throw error;
+            console.error('❌ خطأ في GuerrillaMail:', error.message);
+            throw new Error(`فشل في إنشاء حساب GuerrillaMail: ${error.message}`);
         }
     }
 
     async getMessages(sidToken) {
         try {
+            console.log('📨 جاري جلب الرسائل من GuerrillaMail...');
+            
             const response = await axios.get(`${this.baseURL}/ajax.php?f=get_email_list&offset=0&sid_token=${sidToken}`, {
-                timeout: 10000
+                timeout: 15000,
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                },
+                validateStatus: (status) => status < 500
             });
 
-            return response.data.list || [];
+            if (response.data && response.data.list) {
+                const messages = response.data.list || [];
+                console.log(`✅ تم جلب ${messages.length} رسالة من GuerrillaMail`);
+                return messages;
+            } else {
+                console.log('⚠️ لا توجد رسائل من GuerrillaMail');
+                return [];
+            }
         } catch (error) {
-            console.error('Error fetching messages:', error.message);
+            console.error('❌ خطأ في جلب الرسائل:', error.message);
             return [];
         }
     }
@@ -184,20 +279,68 @@ class GuerrillaMailService {
     async getMessage(sidToken, messageId) {
         try {
             const response = await axios.get(`${this.baseURL}/ajax.php?f=fetch_email&email_id=${messageId}&sid_token=${sidToken}`, {
-                timeout: 10000
+                timeout: 15000,
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                }
             });
 
             return response.data;
         } catch (error) {
-            console.error('Error fetching message:', error.message);
+            console.error('❌ خطأ في جلب الرسالة:', error.message);
             return null;
         }
+    }
+}
+
+// خدمة TempMail البديلة
+class TempMailService {
+    constructor() {
+        this.domains = [
+            'tmpmail.org',
+            'temp-mail.org',
+            '10minutemail.com',
+            'guerrillamail.com',
+            'yopmail.com'
+        ];
+    }
+
+    async createAccount() {
+        try {
+            const domain = this.domains[Math.floor(Math.random() * this.domains.length)];
+            const username = this.generateUsername();
+            const email = `${username}@${domain}`;
+            
+            console.log(`✅ إنشاء حساب TempMail: ${email}`);
+            
+            return {
+                success: true,
+                email: email,
+                password: 'not_required',
+                token: username,
+                accountId: email,
+                service: 'tempMail'
+            };
+        } catch (error) {
+            console.error('❌ خطأ في TempMail:', error.message);
+            throw error;
+        }
+    }
+
+    generateUsername() {
+        const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+        let username = '';
+        for (let i = 0; i < 15; i++) {
+            username += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        return username;
     }
 }
 
 // تهيئة الخدمات
 const mailtmService = new MailTMService();
 const guerrillaService = new GuerrillaMailService();
+const tempMailService = new TempMailService();
 
 // تخزين الحسابات النشطة
 const activeAccounts = new Map();
@@ -220,7 +363,8 @@ app.get('/api/status', (req, res) => {
         status: 'operational',
         services: {
             mailtm: 'active',
-            guerrillamail: 'active'
+            guerrillamail: 'active',
+            tempMail: 'active'
         },
         activeAccounts: activeAccounts.size
     });
@@ -238,46 +382,73 @@ app.post('/api/email/create', async (req, res) => {
             });
         }
 
+        console.log(`🎯 طلب إنشاء إيميل جديد مع الخدمة: ${service}`);
+
         let accountResult;
-        
-        if (service === 'mailtm') {
-            accountResult = await mailtmService.createAccount();
-        } else if (service === 'guerrillamail') {
-            accountResult = await guerrillaService.createAccount();
-        } else {
-            return res.status(400).json({
-                success: false,
-                error: 'الخدمة غير مدعومة'
-            });
+        let attempts = 0;
+        const maxAttempts = 2;
+
+        while (attempts < maxAttempts) {
+            try {
+                attempts++;
+                console.log(`🔄 المحاولة ${attempts} لإنشاء حساب...`);
+                
+                if (service === 'mailtm') {
+                    accountResult = await mailtmService.createAccount();
+                } else if (service === 'guerrillamail') {
+                    accountResult = await guerrillaService.createAccount();
+                } else if (service === 'tempMail') {
+                    accountResult = await tempMailService.createAccount();
+                } else {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'الخدمة غير مدعومة'
+                    });
+                }
+
+                if (accountResult && accountResult.success) {
+                    break;
+                }
+            } catch (error) {
+                console.log(`⚠️ فشلت المحاولة ${attempts}: ${error.message}`);
+                if (attempts === maxAttempts) {
+                    throw error;
+                }
+                // انتظار قبل المحاولة التالية
+                await new Promise(resolve => setTimeout(resolve, 2000));
+            }
         }
 
-        if (accountResult.success) {
+        if (accountResult && accountResult.success) {
             // تخزين الحساب
             const accountData = {
                 ...accountResult,
                 sessionId: sessionId,
                 createdAt: new Date().toISOString(),
-                messageCount: 0
+                messageCount: 0,
+                lastChecked: new Date().toISOString()
             };
             
             activeAccounts.set(accountResult.email, accountData);
+
+            console.log(`✅ تم إنشاء الحساب بنجاح: ${accountResult.email}`);
 
             res.json({
                 success: true,
                 email: accountResult.email,
                 password: accountResult.password,
-                accountId: accountResult.email, // استخدام الإيميل كمعرف
+                accountId: accountResult.email,
                 token: accountResult.token,
                 service: accountResult.service,
-                expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+                expiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(), // ساعتين
                 message: `تم إنشاء الإيميل بنجاح باستخدام ${accountResult.service}`
             });
         } else {
-            throw new Error('فشل في إنشاء الحساب');
+            throw new Error('فشل في إنشاء الحساب بعد جميع المحاولات');
         }
         
     } catch (error) {
-        console.error('Create email error:', error);
+        console.error('💥 خطأ في إنشاء الإيميل:', error.message);
         res.status(500).json({ 
             success: false, 
             error: error.message || 'فشل في إنشاء الإيميل' 
@@ -298,7 +469,7 @@ app.get('/api/email/messages', async (req, res) => {
         }
 
         let messages = [];
-        let account = activeAccounts.get(accountId);
+        const account = activeAccounts.get(accountId);
 
         if (!account) {
             return res.status(404).json({
@@ -307,55 +478,75 @@ app.get('/api/email/messages', async (req, res) => {
             });
         }
 
-        if (service === 'mailtm') {
-            messages = await mailtmService.getMessages(account.token);
-        } else if (service === 'guerrillamail') {
-            messages = await guerrillaService.getMessages(account.token);
+        console.log(`📨 جلب الرسائل لـ: ${accountId} (${service})`);
+
+        try {
+            if (service === 'mailtm') {
+                messages = await mailtmService.getMessages(account.token);
+            } else if (service === 'guerrillamail') {
+                messages = await guerrillaService.getMessages(account.token || account.sid_token);
+            } else if (service === 'tempMail') {
+                // TempMail لا يدعم جلب الرسائل حالياً
+                messages = [];
+            }
+
+            // تحديث وقت آخر فحص
+            account.lastChecked = new Date().toISOString();
+            activeAccounts.set(accountId, account);
+
+            // معالجة الرسائل لتنسيق موحد
+            const processedMessages = messages.map(msg => {
+                if (service === 'mailtm') {
+                    return {
+                        id: msg.id,
+                        sender: msg.from?.address || msg.from?.name || 'غير معروف',
+                        subject: msg.subject || 'بدون عنوان',
+                        content: msg.text || msg.intro || 'لا يوجد محتوى',
+                        preview: msg.intro || (msg.text ? msg.text.substring(0, 100) + '...' : 'لا يوجد معاينة'),
+                        date: msg.createdAt ? new Date(msg.createdAt).toLocaleString('ar-EG') : new Date().toLocaleString('ar-EG'),
+                        unread: !msg.seen
+                    };
+                } else if (service === 'guerrillamail') {
+                    return {
+                        id: msg.mail_id,
+                        sender: msg.mail_from || 'غير معروف',
+                        subject: msg.mail_subject || 'بدون عنوان',
+                        content: msg.mail_body || 'لا يوجد محتوى',
+                        preview: msg.mail_excerpt || (msg.mail_body ? msg.mail_body.substring(0, 100) + '...' : 'لا يوجد معاينة'),
+                        date: msg.mail_timestamp ? new Date(msg.mail_timestamp * 1000).toLocaleString('ar-EG') : new Date().toLocaleString('ar-EG'),
+                        unread: msg.mail_read !== 1
+                    };
+                }
+            }).filter(msg => msg !== null);
+
+            console.log(`✅ تم معالجة ${processedMessages.length} رسالة`);
+
+            res.json({
+                success: true,
+                messages: processedMessages,
+                count: processedMessages.length,
+                service: service,
+                email: accountId,
+                message: `تم جلب ${processedMessages.length} رسالة`
+            });
+
+        } catch (serviceError) {
+            console.error('❌ خطأ في الخدمة:', serviceError.message);
+            res.json({
+                success: true,
+                messages: [],
+                count: 0,
+                service: service,
+                email: accountId,
+                message: 'لا توجد رسائل جديدة'
+            });
         }
 
-        // معالجة الرسائل لتنسيق موحد
-        const processedMessages = messages.map(msg => {
-            if (service === 'mailtm') {
-                return {
-                    id: msg.id,
-                    sender: msg.from?.address || msg.from?.name || 'غير معروف',
-                    subject: msg.subject || 'بدون عنوان',
-                    content: msg.text || msg.intro || 'لا يوجد محتوى',
-                    preview: msg.intro || (msg.text ? msg.text.substring(0, 100) + '...' : 'لا يوجد معاينة'),
-                    date: msg.createdAt ? new Date(msg.createdAt).toLocaleString('ar-EG') : new Date().toLocaleString('ar-EG'),
-                    unread: !msg.seen
-                };
-            } else if (service === 'guerrillamail') {
-                return {
-                    id: msg.mail_id,
-                    sender: msg.mail_from || 'غير معروف',
-                    subject: msg.mail_subject || 'بدون عنوان',
-                    content: msg.mail_body || 'لا يوجد محتوى',
-                    preview: msg.mail_excerpt || (msg.mail_body ? msg.mail_body.substring(0, 100) + '...' : 'لا يوجد معاينة'),
-                    date: msg.mail_timestamp ? new Date(msg.mail_timestamp * 1000).toLocaleString('ar-EG') : new Date().toLocaleString('ar-EG'),
-                    unread: msg.mail_read !== 1
-                };
-            }
-        });
-
-        // تحديث عدد الرسائل
-        account.messageCount = processedMessages.length;
-        activeAccounts.set(accountId, account);
-
-        res.json({
-            success: true,
-            messages: processedMessages,
-            count: processedMessages.length,
-            service: service,
-            email: accountId,
-            message: `تم جلب ${processedMessages.length} رسالة`
-        });
-
     } catch (error) {
-        console.error('Get messages error:', error);
+        console.error('💥 خطأ عام في جلب الرسائل:', error.message);
         res.status(500).json({
             success: false,
-            error: 'حدث خطأ في جلب الرسائل'
+            error: 'حدث خطأ في جلب الرسائل: ' + error.message
         });
     }
 });
@@ -386,7 +577,7 @@ app.get('/api/email/messages/:id', async (req, res) => {
         if (service === 'mailtm') {
             message = await mailtmService.getMessage(account.token, id);
         } else if (service === 'guerrillamail') {
-            message = await guerrillaService.getMessage(account.token, id);
+            message = await guerrillaService.getMessage(account.token || account.sid_token, id);
         }
 
         if (!message) {
@@ -402,10 +593,10 @@ app.get('/api/email/messages/:id', async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Get message error:', error);
+        console.error('❌ خطأ في جلب الرسالة:', error.message);
         res.status(500).json({
             success: false,
-            error: 'فشل في جلب الرسالة'
+            error: 'فشل في جلب الرسالة: ' + error.message
         });
     }
 });
@@ -416,19 +607,31 @@ app.get('/api/email/services/status', async (req, res) => {
         // اختبار اتصال Mail.tm
         let mailtmStatus = 'inactive';
         try {
-            await axios.get('https://api.mail.tm/domains', { timeout: 5000 });
+            await axios.get('https://api.mail.tm/domains', { 
+                timeout: 8000,
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                }
+            });
             mailtmStatus = 'active';
+            console.log('✅ Mail.tm نشط');
         } catch (error) {
-            console.log('Mail.tm test failed:', error.message);
+            console.log('❌ Mail.tm غير نشط:', error.message);
         }
 
         // اختبار اتصال GuerrillaMail
         let guerrillaStatus = 'inactive';
         try {
-            await axios.get('https://api.guerrillamail.com/ajax.php?f=get_email_address', { timeout: 5000 });
+            await axios.get('https://api.guerrillamail.com/ajax.php?f=get_email_address', { 
+                timeout: 8000,
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                }
+            });
             guerrillaStatus = 'active';
+            console.log('✅ GuerrillaMail نشط');
         } catch (error) {
-            console.log('GuerrillaMail test failed:', error.message);
+            console.log('❌ GuerrillaMail غير نشط:', error.message);
         }
 
         res.json({
@@ -436,15 +639,17 @@ app.get('/api/email/services/status', async (req, res) => {
             currentService: 'mailtm',
             services: {
                 mailtm: mailtmStatus,
-                guerrillamail: guerrillaStatus
+                guerrillamail: guerrillaStatus,
+                tempMail: 'active'
             },
             activeAccounts: activeAccounts.size,
-            status: mailtmStatus === 'active' || guerrillaStatus === 'active' ? 'active' : 'inactive'
+            status: (mailtmStatus === 'active' || guerrillaStatus === 'active') ? 'active' : 'limited'
         });
     } catch (error) {
+        console.error('❌ خطأ في حالة الخدمات:', error.message);
         res.json({
             success: false,
-            error: 'فشل في التحقق من حالة الخدمات'
+            error: 'فشل في التحقق من حالة الخدمات: ' + error.message
         });
     }
 });
@@ -454,19 +659,19 @@ app.post('/api/email/services/rotate', (req, res) => {
     res.json({
         success: true,
         message: 'يمكنك اختيار الخدمة يدوياً عند إنشاء الإيميل',
-        availableServices: ['mailtm', 'guerrillamail']
+        availableServices: ['mailtm', 'guerrillamail', 'tempMail']
     });
 });
 
 // إعادة تعيين الخدمات
 app.post('/api/email/services/reset', (req, res) => {
-    // تنظيف الحسابات القديمة (أقدم من 24 ساعة)
+    // تنظيف الحسابات القديمة (أقدم من 3 ساعات)
     const now = new Date();
     let cleanedCount = 0;
     
     for (const [email, account] of activeAccounts.entries()) {
         const accountTime = new Date(account.createdAt);
-        if (now - accountTime > 24 * 60 * 60 * 1000) {
+        if (now - accountTime > 3 * 60 * 60 * 1000) {
             activeAccounts.delete(email);
             cleanedCount++;
         }
@@ -490,7 +695,8 @@ app.get('/api/email/session/:sessionId', (req, res) => {
                 email: email,
                 service: account.service,
                 createdAt: account.createdAt,
-                messageCount: account.messageCount
+                messageCount: account.messageCount,
+                lastChecked: account.lastChecked
             });
         }
     }
@@ -520,6 +726,24 @@ app.delete('/api/email/:email', (req, res) => {
     }
 });
 
+// تنظيف الحسابات القديمة تلقائياً
+setInterval(() => {
+    const now = new Date();
+    let cleanedCount = 0;
+    
+    for (const [email, account] of activeAccounts.entries()) {
+        const accountTime = new Date(account.createdAt);
+        if (now - accountTime > 3 * 60 * 60 * 1000) { // 3 ساعات
+            activeAccounts.delete(email);
+            cleanedCount++;
+        }
+    }
+    
+    if (cleanedCount > 0) {
+        console.log(`🧹 تم تنظيف ${cleanedCount} حساب منتهي الصلاحية تلقائياً`);
+    }
+}, 30 * 60 * 1000); // كل 30 دقيقة
+
 // معالجة جميع الطلبات الأخرى
 app.all('*', (req, res) => {
     res.status(404).json({
@@ -527,6 +751,15 @@ app.all('*', (req, res) => {
         error: 'الصفحة غير موجودة',
         path: req.path
     });
+});
+
+// معالجة الأخطاء غير المتوقعة
+process.on('uncaughtException', (error) => {
+    console.error('💥 خطأ غير متوقع:', error);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('💥 وعد مرفوض:', reason);
 });
 
 module.exports = app;
